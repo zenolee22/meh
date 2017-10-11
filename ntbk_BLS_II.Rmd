@@ -1,0 +1,137 @@
+---
+title: "BLS Occupational Injuries and Illnesses Industry Data"
+output:
+  html_document: default
+  html_notebook: default
+---
+
+```{r}
+library(RCurl)
+library(plotly)
+library(dplyr)
+```
+
+
+Download files from BLS Site
+```{r, eval=FALSE}
+url <- "https://download.bls.gov/pub/time.series/ii/"
+
+filenames <- c("ii.area","ii.case_type","ii.data.1.AllData","ii.data_type","ii.footnote")
+
+for (filename in filenames) {
+download.file(paste(url, filename, sep = ""), paste(getwd(), "/", filename,".txt", sep = ""))
+}
+
+setwd("H:/Projects/Data/BLS_II/")
+
+#download.file(paste(url, "ii.industry", sep = ""), paste(getwd(), "/", "ii.industry",".txt", sep = ""))
+
+```
+
+BLS loves to put trailing tabs on the data which screws up the importing.  Some data cleansing is required to fix this.
+
+```{r,eval=FALSE}
+#Loops and creates tables for each file in the folder
+for (i in filenames)
+{
+  print(i)
+  assign(i,read.table(paste(i,".txt",sep=""),sep="\t",header=TRUE))
+}
+
+#It errored when trying to import ii.industry, so manual cleansing of the file had to be made
+ii.industry <- read.table("ii.industry.csv",sep=",",header=TRUE,row.names=NULL, stringsAsFactors = FALSE)
+ii.data.1.AllData <- read.table("ii.data.1.AllData.txt",sep="\t",header=TRUE)
+#Because the loop broke, I imported the remaining tables manually
+ii.series <- read.table("ii.series.txt",sep="\t",header=TRUE)
+ii.supersector <- read.table("ii.supersector.txt",sep="\t",header=TRUE)
+
+```
+
+Clean all the junky data!  Not all the datasets were screwed up during import.
+```{r, eval=FALSE}
+#Shift everything over
+for (n in ncol(ii.area):2){
+  ii.area[,n] <- ii.area[,n-1]
+}
+ii.area[,1] <- as.numeric(row.names(ii.area))
+
+ii.case_type[,2] <- ii.case_type[,1]
+ii.case_type[,1] <- row.names(ii.case_type)
+
+ii.data_type[,2] <- ii.data_type[,1]
+ii.data_type[,1] <- row.names(ii.data_type)
+
+ii.footnote[,2] <- ii.footnote[,1]
+ii.footnote[,1] <- row.names(ii.footnote)
+
+for (n in ncol(ii.supersector):2){
+  ii.supersector[,n] <- ii.supersector[,n-1]
+}
+ii.supersector[,1] <- row.names(ii.supersector)
+
+ii.industry[1,"industry_code"] <- "000000"
+
+```
+
+```{r, eval=FALSE}
+ii.series <- merge(x=ii.series, y=ii.area[,1:2], by="area_code",all.x=TRUE)
+ii.series <- merge(x=ii.series, y=ii.data_type[,1:2], by="data_type_code",all.x=TRUE)
+ii.series <- merge(x=ii.series, y=ii.case_type[,1:2], by="case_type_code",all.x=TRUE)
+ii.series <- merge(x=ii.series, y=ii.industry[,2:3], by="industry_code",all.x=TRUE)
+ii.series <- merge(x=ii.series, y=ii.supersector[,1:2], by="supersector_code",all.x=TRUE)
+
+```
+
+```{r, eval=FALSE}
+
+data.cleaned <- left_join(ii.data.1.AllData,ii.series,by="series_id") %>% 
+       select(series_id,year,period,value,area_name,data_type_text,supersector_code, supersector_name
+              ,industry_code, industry_name, area_code, area_name, data_type_code, data_type_text
+              ,case_type_code, case_type_text)
+```
+
+
+```{r, eval=FALSE}
+unique(data.cleaned[,c("area_code","area_name")])
+unique(data.cleaned[,c("data_type_code","data_type_text")])
+unique(data.cleaned[data.cleaned$case_type_code == "3" & data.cleaned$area_code == "0",c("data_type_text")])
+unique(data.cleaned[,"year"])
+
+
+data.cleaned[data.cleaned$data_type_code == "6" & data.cleaned$area_code == "0" & data.cleaned$case_type_code=="3",]
+
+```
+
+Let's plot some stuffs!
+```{r, echo=TRUE}
+
+stage <- data.cleaned[data.cleaned$series_id == "IIU00000000063000",]
+
+list_data <- c("6","B","H","K","T","Z")
+
+plot_list <- htmltools::tagList()
+colorset <- c("rgb(77, 148, 255)","rgb(255, 166, 77)","rgb(255, 77, 77)","rgb(51, 204, 51)")
+
+for (i in seq(from=1,to=length(list_data),by=1))
+{
+p <- plot_ly(data.cleaned[data.cleaned$data_type_code == list_data[i] & data.cleaned$area_code == "0" & data.cleaned$case_type_code=="3",]
+             ,x=~paste(year,period,sep="_")
+             ,y=~value
+             ,type="scatter"
+             ,mode="lines+markers"
+             ,name=list_data[i]
+             ,line=list(color=colorset[i%%4+1]) 
+             ,marker=list(color=colorset[i%%4+1],line=list(color=colorset[i%%4+1]))
+             ) %>%
+  layout(
+    title = list_data[i],
+    xaxis=list(title="Period"),
+    yaxis=list(title="Total")) 
+  
+  plot_list[[i]] <- p
+}
+
+plot_list
+
+```
+
