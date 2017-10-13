@@ -1,54 +1,53 @@
 ---
-title: "BLS Occupational Injuries and Illnesses Industry Data"
+title: "R Notebook"
 output:
-  html_document: default
-  html_notebook: default
+  html_document:
+    df_print: paged
 ---
 
-```{r}
+```{r, echo=FALSE}
 library(RCurl)
 library(plotly)
 library(dplyr)
 ```
 
 
-Download files from BLS Site
+Download data from BLS Website
 ```{r, eval=FALSE}
 url <- "https://download.bls.gov/pub/time.series/ii/"
 
-filenames <- c("ii.area","ii.case_type","ii.data.1.AllData","ii.data_type","ii.footnote")
+setwd("~/R/BLS/")
+filenames <- c("ii.area","ii.case_type","ii.data.1.AllData","ii.data_type","ii.footnote","ii.industry","ii.series","ii.supersector")
 
 for (filename in filenames) {
-download.file(paste(url, filename, sep = ""), paste(getwd(), "/", filename,".txt", sep = ""))
+download.file(paste(url, filename, sep = ""), paste("~/R/BLS/Data", "/", filename,".txt", sep = ""))
 }
-
-setwd("H:/Projects/Data/BLS_II/")
 
 #download.file(paste(url, "ii.industry", sep = ""), paste(getwd(), "/", "ii.industry",".txt", sep = ""))
 
 ```
 
-BLS loves to put trailing tabs on the data which screws up the importing.  Some data cleansing is required to fix this.
+```{r, eval=TRUE}
+goodfiles <- c("ii.area","ii.case_type","ii.data.1.AllData","ii.data_type","ii.footnote","ii.series","ii.supersector")
 
-```{r,eval=FALSE}
 #Loops and creates tables for each file in the folder
-for (i in filenames)
+for (i in goodfiles)
 {
   print(i)
-  assign(i,read.table(paste(i,".txt",sep=""),sep="\t",header=TRUE))
+  assign(i,read.table(paste("~/R/BLS/Data/",i,".txt",sep=""),sep="\t",header=TRUE,stringsAsFactors = FALSE))
 }
 
 #It errored when trying to import ii.industry, so manual cleansing of the file had to be made
-ii.industry <- read.table("ii.industry.csv",sep=",",header=TRUE,row.names=NULL, stringsAsFactors = FALSE)
-ii.data.1.AllData <- read.table("ii.data.1.AllData.txt",sep="\t",header=TRUE)
+ii.industry <- read.table("~/R/BLS/Data/ii.industry.csv",sep=",",header=TRUE,row.names=NULL, stringsAsFactors = FALSE)
+#ii.data.1.AllData <- read.table("ii.data.1.AllData.txt",sep="\t",header=TRUE)
 #Because the loop broke, I imported the remaining tables manually
-ii.series <- read.table("ii.series.txt",sep="\t",header=TRUE)
-ii.supersector <- read.table("ii.supersector.txt",sep="\t",header=TRUE)
+#ii.series <- read.table("ii.series.txt",sep="\t",header=TRUE)
+#ii.supersector <- read.table("ii.supersector.txt",sep="\t",header=TRUE)
 
 ```
 
 Clean all the junky data!  Not all the datasets were screwed up during import.
-```{r, eval=FALSE}
+```{r, eval=TRUE}
 #Shift everything over
 for (n in ncol(ii.area):2){
   ii.area[,n] <- ii.area[,n-1]
@@ -73,58 +72,91 @@ ii.industry[1,"industry_code"] <- "000000"
 
 ```
 
-```{r, eval=FALSE}
+
+```{r, eval=TRUE}
 ii.series <- merge(x=ii.series, y=ii.area[,1:2], by="area_code",all.x=TRUE)
 ii.series <- merge(x=ii.series, y=ii.data_type[,1:2], by="data_type_code",all.x=TRUE)
 ii.series <- merge(x=ii.series, y=ii.case_type[,1:2], by="case_type_code",all.x=TRUE)
 ii.series <- merge(x=ii.series, y=ii.industry[,2:3], by="industry_code",all.x=TRUE)
 ii.series <- merge(x=ii.series, y=ii.supersector[,1:2], by="supersector_code",all.x=TRUE)
-
 ```
 
-```{r, eval=FALSE}
-
+```{r, eval=TRUE}
 data.cleaned <- left_join(ii.data.1.AllData,ii.series,by="series_id") %>% 
        select(series_id,year,period,value,area_name,data_type_text,supersector_code, supersector_name
               ,industry_code, industry_name, area_code, area_name, data_type_code, data_type_text
               ,case_type_code, case_type_text)
 ```
 
-
-```{r, eval=FALSE}
-unique(data.cleaned[,c("area_code","area_name")])
-unique(data.cleaned[,c("data_type_code","data_type_text")])
-unique(data.cleaned[data.cleaned$case_type_code == "3" & data.cleaned$area_code == "0",c("data_type_text")])
-unique(data.cleaned[,"year"])
-
-
-data.cleaned[data.cleaned$data_type_code == "6" & data.cleaned$area_code == "0" & data.cleaned$case_type_code=="3",]
-
+```{r}
+#Note for dplyr the order matters.  The filter statement comes before the group by, summarize, etc.
+data.cleaned %>% 
+  #filter(area_name=="All ownerships, All U.S.") %>%
+  group_by(series_id, data_type_text) %>% 
+  summarize(n=n()) %>% 
+  arrange(desc(n))
 ```
 
-Let's plot some stuffs!
-```{r, echo=TRUE}
+```{r}
+ii.data_type
+```
 
-stage <- data.cleaned[data.cleaned$series_id == "IIU00000000063000",]
+Find all the datasets that has data at least from 2003
+```{r}
+list_data <- unique(data.cleaned[data.cleaned$data_type_code == "5" & 
+               data.cleaned$area_code > 0 & 
+               data.cleaned$area_code < 100 &
+               data.cleaned$case_type_code=="1" & 
+               data.cleaned$year == 2003,c("area_code","area_name")])
+```
 
-list_data <- c("6","B","H","K","T","Z")
+The following will plot all the graphs together
+```{r, eval=TRUE}
+
+#df <- data.frame(data.cleaned)
+
+p <- plot_ly(type="scatter"
+             ,mode="lines+markers")
+
+for (i in seq(from=1,to=nrow(list_data),by=1))
+{
+p <- p %>% add_trace(
+             x=data.cleaned[data.cleaned$data_type_code == "5" & data.cleaned$area_code == list_data[i,1] & data.cleaned$case_type_code=="1","year"]
+             ,y=data.cleaned[data.cleaned$data_type_code == "5" & data.cleaned$area_code == list_data[i,1] & data.cleaned$case_type_code=="1","value"]
+             ,name=list_data[i,2]
+             ) 
+}
+
+p %>% 
+  layout(
+    title = paste("Total Recorded Cases - ",list_data[i,2],sep=""),
+    xaxis=list(title="Period"),
+    yaxis=list(title="Total")) 
+
+p
+```
+
+This will show individual graphs
+```{r}
+
+#list_data <- ii.area[ii.area$area_code > 0 & ii.area$area_code <100,]
 
 plot_list <- htmltools::tagList()
 colorset <- c("rgb(77, 148, 255)","rgb(255, 166, 77)","rgb(255, 77, 77)","rgb(51, 204, 51)")
 
-for (i in seq(from=1,to=length(list_data),by=1))
+for (i in seq(from=1,to=nrow(list_data),by=1))
 {
-p <- plot_ly(data.cleaned[data.cleaned$data_type_code == list_data[i] & data.cleaned$area_code == "0" & data.cleaned$case_type_code=="3",]
+p <- plot_ly(data.cleaned[data.cleaned$data_type_code == "5" & data.cleaned$area_code == list_data[i,1] & data.cleaned$case_type_code=="1",]
              ,x=~paste(year,period,sep="_")
              ,y=~value
              ,type="scatter"
              ,mode="lines+markers"
-             ,name=list_data[i]
+             ,name=list_data[i,2]
              ,line=list(color=colorset[i%%4+1]) 
              ,marker=list(color=colorset[i%%4+1],line=list(color=colorset[i%%4+1]))
              ) %>%
   layout(
-    title = list_data[i],
+    title = paste("Total Recorded Cases - ",list_data[i,2],sep=""),
     xaxis=list(title="Period"),
     yaxis=list(title="Total")) 
   
@@ -132,6 +164,19 @@ p <- plot_ly(data.cleaned[data.cleaned$data_type_code == list_data[i] & data.cle
 }
 
 plot_list
-
 ```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
