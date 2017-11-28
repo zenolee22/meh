@@ -1,0 +1,119 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+agrep("Axis Re","Axis Reinsurance Company",ignore.case=TRUE, value=TRUE)
+
+agrep("Zurich Re","Axis Reinsurance Company",ignore.case=TRUE, value=TRUE)
+
+agrep("Arch Insurance","Axis Reinsurance Company",ignore.case=TRUE)
+
+
+
+```
+
+```{r}
+library(fuzzyjoin)
+library(data.table)
+library(dplyr)
+
+library(qdapDictionaries)
+words <- tbl_df(DICTIONARY)
+
+data("misspellings")
+
+dir <- "~/R/OSHA/Data/"
+filename <- "osha_inspection_20171117.csv/osha_inspection-5.csv"
+dict <- "osha_data_dictionary.csv"
+
+inspection <- fread(paste(dir,filename,sep=""),nrows=1000)
+inspection <- fread(paste(dir,filename,sep=""))
+
+dictionary <- fread(paste(dir,dict,sep=""))
+
+query <- data.frame(estab_name=as.character())
+
+query <- rbind(query,data.frame(estab_name="Monitor Tire"))
+query <- rbind(query,data.frame(estab_name="Monitor"))
+query <- rbind(query,data.frame(estab_name="Moniter Tires"))
+
+fuzzy_inner_join(inspection,query,by=c("estab_name","estab_name"))
+
+query %>% stringdist_inner_join(inspection,by=c(estab_name="estab_name"),distance_col="distance")
+
+
+set.seed(2016)
+sub_misspellings <- misspellings %>%
+  sample_n(1000)
+
+
+joined <- sub_misspellings %>%
+  stringdist_inner_join(words, by = c(misspelling = "word"), max_dist = 1)
+
+query %>% stringdist_inner_join(inspection,by=c(estab_name="estab_name"),ignore_case=TRUE,distance_col="distance")
+
+stringdist_inner_join(query, inspection, by ="estab_name", distance_col = "distance",ignore_case=TRUE)
+
+agrep("monitor","MONITOR Tires",ignore.case = TRUE)
+
+```
+
+```{r}
+#Didn't install properly
+library(fuzzywuzzyR)
+```
+
+```{r}
+library(dplyr)
+library(plotly)
+library(lubridate)
+help(plotly)
+
+osha.bystate <- inspection %>% group_by(site_state) %>% summarize(total_count=n())
+
+p <- plot_ly(type="bar")
+p <- p %>% add_trace(x=osha.bystate$site_state, y=osha.bystate$total_count, name="Inspection") 
+p
+```
+
+```{r}
+inspection$close_case_year <- year(as.Date(inspection$close_case_date))
+inspection$open_case_year <- year(as.Date(inspection$open_date))
+inspection %>% group_by(close_case_year) %>% filter(site_state=="CA") %>% summarize(total_count=n())
+inspection.CA <- inspection %>% group_by(site_zip) %>% filter(site_state=="CA") %>% summarize(total_count=n())
+```
+
+
+
+```{r}
+library(choroplethr)
+library(choroplethrZip)
+library(ggplot2)
+library(gridExtra)
+data(df_pop_zip)
+
+colnames(inspection.CA) <- c("region","value")
+
+default = zip_choropleth(inspection.CA, 
+                         state_zoom = "california",
+                         title = "With Border",
+                         legend="Inspection Count")
+
+default
+
+ca_map = ZipChoropleth$new(inspection.CA)
+ca_map$title = "CA Inspection Count"
+ca_map$ggplot_polygon = geom_polygon(aes(fill = value), 
+                                color = NA)
+ca_map$set_zoom_zip(state_zoom  = "california", 
+               county_zoom = NULL, 
+               msa_zoom    = NULL, 
+               zip_zoom    = NULL)
+no_border = ca_map$render() 
+no_border
+grid.arrange(default, no_border, ncol = 2)
+
+```
+
